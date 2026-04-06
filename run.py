@@ -394,6 +394,163 @@ def step_generate_md(idx_path, docs_dir):
 
 
 # =========================================================================
+# Step 6: 스타트 프롬프트 자동 생성
+# =========================================================================
+def step_generate_start_prompt(idx_path, output_dir):
+    """프로젝트 폴더를 스캔하여 start_prompt.md 자동 생성"""
+
+    with open(idx_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    # 볼륨 범위 파악
+    slides = data.get('slides', [])
+    vol_info = {}
+    for s in slides:
+        v = s['slide_number'] // 1000
+        if v not in vol_info:
+            vol_info[v] = {'min': s['slide_number'], 'max': s['slide_number'], 'count': 0}
+        vol_info[v]['min'] = min(vol_info[v]['min'], s['slide_number'])
+        vol_info[v]['max'] = max(vol_info[v]['max'], s['slide_number'])
+        vol_info[v]['count'] += 1
+
+    # 템플릿 분포
+    from collections import Counter
+    tmpl_counts = Counter(s['template'] for s in slides if s['template'] != 'T14')
+
+    # 폴더 스캔
+    def scan_folder(folder_path):
+        if not os.path.isdir(folder_path):
+            return []
+        files = []
+        for f in sorted(os.listdir(folder_path)):
+            fp = os.path.join(folder_path, f)
+            if os.path.isfile(fp) and not f.startswith('.'):
+                size_kb = os.path.getsize(fp) // 1024
+                files.append((f, size_kb))
+        return files
+
+    rfp_files = scan_folder(os.path.join(output_dir, 'rfp'))
+    ref_files = scan_folder(os.path.join(output_dir, 'references'))
+    raw_files = scan_folder(os.path.join(output_dir, 'rawdata'))
+
+    # 파트 정보 생성
+    parts_lines = []
+    for v in sorted(vol_info.keys()):
+        info = vol_info[v]
+        parts_lines.append(
+            f"## 파트 {v}: vol{v} ({info['count']}장, ref_slide {info['min']}~{info['max']})\n"
+            f"- backbone: `./proposal-backbone-part{v}.md`\n"
+            f"- 본문: `./proposal-body-part{v}.md`"
+        )
+
+    # 파일 목록 포맷
+    def format_file_list(files, folder):
+        if not files:
+            return f"- `{folder}/` — (파일 없음)\n"
+        lines = []
+        for fname, size in files:
+            lines.append(f"- `{folder}/{fname}` ({size}KB)")
+        return '\n'.join(lines) + '\n'
+
+    # 스타트 프롬프트 조립
+    prompt = f'''"{ output_dir }" 폴더를 기반으로 제안서 본문을 작성합니다.
+이 프롬프트는 **backbone + body MD 작성까지만** 진행합니다. PPTX 변환은 별도 CLI 도구(md2pptx)로 수행합니다.
+
+# 1. 반드시 읽을 파일
+
+| 파일 | 용도 |
+|---|---|
+| `rfp/사업개요.md` | 사업 기본정보, 산출물 목록 |
+| `rfp/목차.md` | 전체 목차, 배점, 작성지침 |
+| `docs/GUIDE.md` | 워크플로우, 글쓰기 규칙, 출처 주석 |
+| `docs/slides/S????.md` | ★ 각 슬라이드별 원본 텍스트 + @필드 구조. 이 구조를 그대로 따를 것 |
+| `docs/T0.md` ~ `T9.md` | 템플릿별 슬라이드 목록 (참고용) |
+
+## 프로젝트 내 참고자료
+
+### rfp/
+{format_file_list(rfp_files, 'rfp')}
+### references/
+{format_file_list(ref_files, 'references')}
+### rawdata/
+{format_file_list(raw_files, 'rawdata')}
+# 2. 슬라이드 현황
+
+| 볼륨 | 슬라이드 수 | 번호 범위 |
+|---|---|---|
+'''
+
+    for v in sorted(vol_info.keys()):
+        info = vol_info[v]
+        prompt += f'| vol{v} | {info["count"]}장 | S{info["min"]}~S{info["max"]} |\n'
+
+    prompt += f'''
+템플릿 분포: {', '.join(f'{t}:{c}장' for t, c in tmpl_counts.most_common())}
+
+# 3. 작업 대상 파트
+
+사용자가 지정한 파트를 작성합니다. 작업 시작 전 어떤 파트를 진행할지 사용자에게 확인하세요.
+
+{chr(10).join(parts_lines)}
+
+# 4. 작업 순서
+
+## Step 1. backbone → `./proposal-backbone-partN.md`
+- rfp/목차.md를 읽고 전체 슬라이드 계획표 작성 (슬라이드 번호, 제목, 템플릿, ref_slide, 내용 요약)
+- 사용자 확인 후 Step 2 진행
+
+## Step 2. 본문 → `./proposal-body-partN.md`
+- `docs/slides/S????.md`에서 @필드 구조 확인 → references/ PDF 참조하여 내용 채우기
+- 대단원 완료 시마다 파일 저장 + 사용자에게 진행상황 알림
+- 전체 완료되면 사용자에게 최종 확인 요청
+
+**PPTX 변환은 이 프롬프트 범위 밖입니다.** 본문 작성 완료 후 별도 CLI로 변환:
+```
+python -m md2pptx proposal-body-partN.md -t templates/slides -o output/partN.pptx --continue-on-error -v
+```
+
+# 5. 글쓰기 규칙
+
+- 거버닝 메시지: 200자 / 카드 제목: 15자 / 카드 본문: 300자 / 핵심 문구: 50~100자
+- **빈 슬라이드 금지** — 모든 @필드에 실질적 텍스트 필수
+- **T0(구분페이지) 이외** 모든 슬라이드에 governing_message + 본문 필수
+- 이미지 작업 불필요, 색상 마커 사용 안 함, 순수 확장 MD 문법
+- 출처 주석은 **본문(@필드)에 넣지 말 것** → `@note` 필드에 내용 요약 + 출처 함께 기재
+
+## 출처 주석 형식
+- `<!-- [rawdata] 파일명, p.페이지 -->` — 원문 인용
+- `<!-- [ref] 파일명, p.페이지 -->` — 참고
+- `<!-- [AI] 설명 -->` — AI 생성 내용
+
+## 분량 기준 (목표의 2배)
+- 목차의 p수는 최종 목표이며, **작성 시에는 2배**로 슬라이드 작성
+- 1p → 2장 / 3~5p → 6~10장 / 6p+ → 12장 이상
+
+## 템플릿 배정 가이드
+
+| 내용 유형 | 템플릿 | 글 형태 |
+|---|---|---|
+| 섹션 구분 | T0 | 제목 1줄 |
+| 현황/문제점/개선 | T1 | 카드 2~6개 |
+| 목적/전략 | T2 | 카드 + 세분화 |
+| 범위/비전 | T3 | 거버닝메시지 + 영역 |
+| 복수 테이블 | T4 | 마크다운 테이블 x2+ |
+| 테이블+설명 | T5 | 테이블 + 다이어그램 텍스트 |
+| 큰 데이터 표 | T6 | 마크다운 테이블 |
+| 프로세스+테이블 | T7 | 단계별 설명 + 테이블 |
+| 이미지 중심 | T8 | 이미지 + 캡션 |
+| 핵심 포인트 | T9 | 핵심 문구 3~6개 |
+'''
+
+    prompt_path = os.path.join(output_dir, 'start_prompt.md')
+    with open(prompt_path, 'w', encoding='utf-8') as f:
+        f.write(prompt)
+
+    print(f"  스타트 프롬프트 생성 완료: {prompt_path}")
+    return prompt_path
+
+
+# =========================================================================
 # slide_index.json 머지 헬퍼
 # =========================================================================
 def merge_slide_index(target_path, new_data_path, vol_num):
@@ -438,7 +595,7 @@ def run_pipeline(pptx_path, output_dir, vol_num, merge_to=None):
 
     try:
         # Step 1: 분석 (원본 텍스트 포함 slide_index.json)
-        print("[Step 1/5] 슬라이드 분석...")
+        print("[Step 1/6] 슬라이드 분석...")
         temp_idx = step_analyze(pptx_path, vol_num, temp_dir)
 
         # 원본 텍스트 slide_index 보존 (MD 생성용)
@@ -455,21 +612,25 @@ def run_pipeline(pptx_path, output_dir, vol_num, merge_to=None):
             print(f"  slide_index.json 복사 완료: {target_idx}")
 
         # Step 2: 블록처리
-        print("\n[Step 2/5] 텍스트 블록처리...")
+        print("\n[Step 2/6] 텍스트 블록처리...")
         sanitized_pptx = os.path.join(temp_dir, "sanitized.pptx")
         step_sanitize(pptx_path, sanitized_pptx)
 
         # Step 3: 분할
-        print("\n[Step 3/5] 슬라이드 분할...")
+        print("\n[Step 3/6] 슬라이드 분할...")
         step_split(sanitized_pptx, slides_dir, vol_num)
 
         # Step 4: 개별 슬라이드 MD 생성 (원본 텍스트 사용!)
-        print("\n[Step 4/5] 개별 슬라이드 MD 생성...")
+        print("\n[Step 4/6] 개별 슬라이드 MD 생성...")
         step_generate_slide_md(raw_idx, slides_md_dir)
 
         # Step 5: 그룹 MD 생성 (T0~T9 + GUIDE)
-        print("\n[Step 5/5] 그룹 MD 생성...")
+        print("\n[Step 5/6] 그룹 MD 생성...")
         step_generate_md(target_idx, docs_dir)
+
+        # Step 6: 스타트 프롬프트 생성
+        print("\n[Step 6/6] 스타트 프롬프트 생성...")
+        step_generate_start_prompt(target_idx, output_dir)
 
         # --merge-to 옵션
         if merge_to:
@@ -496,6 +657,7 @@ def run_pipeline(pptx_path, output_dir, vol_num, merge_to=None):
             f"  docs/         : {docs_count}개 MD (GUIDE + T0~T9)\n"
             f"  docs/slides/  : {slides_md_count}개 MD (개별 슬라이드)\n"
             f"  templates/slides/ : {slides_count}개 PPTX (블록처리)\n"
+            f"  start_prompt.md   : 2단계 글쓰기용 스타트 프롬프트\n"
             f"  볼륨: vol{vol_num} (S{vol_num}001~)\n"
             f"{'='*60}"
         )

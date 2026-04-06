@@ -83,39 +83,41 @@ pip install -r requirements.txt
 
 ## 사용법
 
-### 기본 명령어
-
-```powershell
-cd D:\00work\260404-PPTblokmaker
-
-python run.py "C:\Users\사용자이름\Documents\pro2ppt\내프로젝트\input\vol2.pptx" "C:\Users\사용자이름\Documents\pro2ppt\내프로젝트" --vol 2
-```
-
 ### 명령어 형식
 
 ```
-python run.py <원본PPTX경로> <프로젝트폴더경로> --vol <볼륨번호>
+python run.py <원본PPTX> <출력폴더> --vol <번호>
 ```
 
-| 인자 | 설명 | 기본값 |
+| 부분 | 의미 |
+|---|---|
+| `python run.py` | PPT Block Maker 실행 |
+| `<원본PPTX>` | 분석할 PPTX 파일 경로 |
+| `<출력폴더>` | 결과를 저장할 프로젝트 폴더 경로 |
+| `--vol <번호>` | 볼륨 번호 — 슬라이드 번호 체계를 결정 (S**2**001~, S**3**001~ 등) |
+
+| 옵션 | 설명 | 기본값 |
 |---|---|---|
-| `원본PPTX경로` | 분석할 PPTX 파일 | (필수) |
-| `프로젝트폴더경로` | 결과를 저장할 폴더 | (필수) |
 | `--vol` | 볼륨 번호 (1~9, 0=자동분류) | 0 |
 | `--merge-to` | 외부 slide_index.json 경로 (추가 머지) | (선택) |
 
 ### 실행 예시
 
 ```powershell
-# Part II 분석 (vol 2)
+cd D:\00work\260404-PPTblokmaker
+
+# 1) Part II 분석 (vol 2 → 슬라이드 S2001~)
 python run.py "C:\내프로젝트\input\vol2.pptx" "C:\내프로젝트" --vol 2
 
-# Part III 추가 (같은 프로젝트 폴더에 vol 3 병합)
+# 2) Part III 추가 (vol 3 → 슬라이드 S3001~, 같은 출력폴더에 자동 병합)
 python run.py "C:\내프로젝트\input\vol3.pptx" "C:\내프로젝트" --vol 3
-
-# 자동 분류 모드
-python run.py "C:\내프로젝트\input\제안서.pptx" "C:\내프로젝트"
 ```
+
+> **`--vol` 번호의 역할:**
+> - `--vol 2` → 슬라이드 번호가 S**2**001, S**2**002, ... 로 생성
+> - `--vol 3` → 슬라이드 번호가 S**3**001, S**3**002, ... 로 생성
+> - 같은 출력폴더에 다른 vol로 실행하면 기존 결과에 **자동 병합**됩니다
+> - `slide_index.json`도 볼륨별로 머지되어 하나의 파일로 관리됩니다
 
 ---
 
