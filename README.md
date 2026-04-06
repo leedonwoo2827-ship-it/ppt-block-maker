@@ -150,8 +150,11 @@ PPT Block Maker
 [Step 4/5] 개별 슬라이드 MD 생성...
   개별 MD 생성 완료: 128개 파일
 
-[Step 5/5] 그룹 MD 생성...
+[Step 5/6] 그룹 MD 생성...
   그룹 MD 생성 완료
+
+[Step 6/6] 스타트 프롬프트 생성...
+  스타트 프롬프트 생성 완료: C:\내프로젝트\start_prompt.md
 
 ============================================================
 완료!
@@ -159,6 +162,7 @@ PPT Block Maker
   docs/         : 11개 MD (GUIDE + T0~T9)
   docs/slides/  : 128개 MD (개별 슬라이드)
   templates/slides/ : 128개 PPTX (블록처리)
+  start_prompt.md   : 2단계 글쓰기용 스타트 프롬프트
   볼륨: vol2 (S2001~)
 ============================================================
 ```
@@ -167,6 +171,7 @@ PPT Block Maker
 
 ```
 내프로젝트/
+├── start_prompt.md              # ★ 2단계 글쓰기용 스타트 프롬프트 (자동 생성)
 ├── docs/
 │   ├── GUIDE.md                 # 워크플로우 가이드
 │   ├── T0.md ~ T9.md            # 템플릿별 슬라이드 목록 (참고용)
@@ -224,13 +229,17 @@ ref_slide: 2003
   ├─ Step 4. 개별 슬라이드 MD 생성 ★
   │   → docs/slides/S2001.md, S2002.md, ... (원본 텍스트 포함)
   │
-  └─ Step 5. 그룹 MD 생성
-      → docs/T0~T9.md + GUIDE.md (템플릿별 참고 목록)
+  ├─ Step 5. 그룹 MD 생성
+  │   → docs/T0~T9.md + GUIDE.md (템플릿별 참고 목록)
+  │
+  └─ Step 6. 스타트 프롬프트 생성
+      → start_prompt.md (2단계 글쓰기용, 폴더 자동 스캔)
 ```
 
 **핵심 포인트:**
 - **MD 파일** (docs/slides/) → 원본 텍스트가 살아있음 → 2단계 글쓰기 참고용
 - **PPTX 파일** (templates/slides/) → 텍스트가 ████로 마스킹됨 → 3단계 변환용
+- **start_prompt.md** → 2단계 Claude Desktop에서 바로 사용 가능한 프롬프트
 
 ---
 
@@ -238,9 +247,11 @@ ref_slide: 2003
 
 | 단계 | 도구 | 입력 | 출력 |
 |---|---|---|---|
-| **1단계** | ppt-block-maker | 원본 PPTX | docs/slides/, templates/slides/ |
-| **2단계** | pptx-vertical-writer | docs/slides/S????.md (참고) | proposal-body.md |
+| **1단계** | ppt-block-maker | 원본 PPTX | docs/slides/, templates/slides/, **start_prompt.md** |
+| **2단계** | pptx-vertical-writer | start_prompt.md → 자동 시작 | proposal-body.md |
 | **3단계** | md2pptx | proposal-body.md + templates/ | 최종 PPTX |
+
+> **사업팀 워크플로우:** 폴더에 자료 넣기 → `python run.py` 실행 → Claude Desktop에서 "제안서 작성해줘" → 끝
 
 ---
 
